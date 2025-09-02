@@ -1,8 +1,24 @@
 import { useState } from 'react';
 import axios from 'axios';
 
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+
+interface DbFormData {
+  type: 'mysql' | 'postgres';
+  host: string;
+  port: string;
+  user: string;
+  password: string;
+  database: string;
+}
+
+interface ApiResponse {
+  success: boolean;
+  error?: string;
+}
+
 export default function DbChecker() {
-  const [form, setForm] = useState({
+  const [form, setForm] = useState<DbFormData>({
     type: 'mysql',
     host: '',
     port: '',
@@ -17,17 +33,34 @@ export default function DbChecker() {
     setForm({ ...form, [e.target.name]: e.target.value });
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setLoading(true);
     setResult(null);
+
     try {
-      const res = await axios.post('http://localhost:5000/api/check-db', form);
+      const res = await axios.post<ApiResponse>(`${API_URL}/api/check-db`, form, {
+        headers: { 'Content-Type': 'application/json' },
+        timeout: 10000
+      });
       setResult(res.data);
-    } catch (err: any) {
-      setResult({ success: false, error: err.response?.data?.error || 'Connection failed' });
+    } catch (error: unknown) {
+      if (error && typeof error === 'object' && 'response' in error) {
+        const axiosError = error as { response?: { data?: { error?: string } }; message?: string; code?: string };
+        const errorMessage = axiosError.response?.data?.error || axiosError.message;
+        setResult({
+          success: false,
+          error: axiosError.code === 'ECONNABORTED'
+            ? 'Connection timed out. Please try again.'
+            : errorMessage || 'Connection failed'
+        });
+      } else {
+        console.error('Unexpected error:', error);
+        setResult({ success: false, error: 'An unexpected error occurred' });
+      }
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
   return (
